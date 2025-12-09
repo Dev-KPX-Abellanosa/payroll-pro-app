@@ -1,0 +1,31 @@
+{
+  "name": "data",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/data/src",
+  "projectType": "library",
+  "targets": {
+    "prisma-generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "prisma generate --schema=libs/data/prisma/schema.prisma",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "prisma-migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "prisma migrate dev --schema=libs/data/prisma/schema.prisma",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "prisma-studio": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "prisma studio --schema=libs/data/prisma/schema.prisma",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  },
+  "tags": ["type:data", "scope:shared"]
+}
+

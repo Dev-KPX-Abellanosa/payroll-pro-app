@@ -1,0 +1,435 @@
+// Prisma Schema for Payroll Pro System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Accounts & Authentication
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  role          Role      @default(EMPLOYEE)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee?
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  HR
+  ACCOUNTANT
+  EMPLOYEE
+}
+
+// Employee Information
+model Employee {
+  id                String    @id @default(cuid())
+  employeeNumber    String    @unique
+  userId            String    @unique
+  firstName         String
+  lastName          String
+  middleName        String?
+  email             String    @unique
+  phone             String?
+  address           String?
+  dateOfBirth       DateTime?
+  dateHired         DateTime
+  dateTerminated    DateTime?
+  employmentType    EmploymentType @default(FULL_TIME)
+  department        String?
+  position          String?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance        Attendance[]
+  shifts            Shift[]
+  payrollRecords    PayrollRecord[]
+  rates             PayRate[]
+  deductions        Deduction[]
+  contributions     Contribution[]
+  loans             Loan[]
+  leaveRequests     LeaveRequest[]
+
+  @@map("employees")
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+}
+
+// Attendance Tracking
+model Attendance {
+  id            String    @id @default(cuid())
+  employeeId    String
+  shiftId       String?
+  date          DateTime  @db.Date
+  timeIn        DateTime?
+  timeOut       DateTime?
+  breakDuration Int       @default(0) // in minutes
+  totalHours    Float?
+  status        AttendanceStatus @default(PRESENT)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift         Shift?    @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  @@unique([employeeId, date])
+  @@map("attendance")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  ON_LEAVE
+  HALF_DAY
+}
+
+// Shifts
+model Shift {
+  id            String    @id @default(cuid())
+  employeeId    String
+  name          String
+  startTime     String    // HH:mm format
+  endTime       String    // HH:mm format
+  isNightShift  Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendance    Attendance[]
+
+  @@map("shifts")
+}
+
+// Pay Rates
+model PayRate {
+  id            String    @id @default(cuid())
+  employeeId    String
+  rateType      RateType
+  amount        Float
+  effectiveDate DateTime
+  endDate       DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("pay_rates")
+}
+
+enum RateType {
+  HOURLY
+  DAILY
+  MONTHLY
+  PIECE_RATE
+}
+
+// Payroll Records
+model PayrollRecord {
+  id                    String    @id @default(cuid())
+  employeeId            String
+  payrollRunId          String
+  periodStart           DateTime  @db.Date
+  periodEnd             DateTime  @db.Date
+  
+  // Earnings
+  regularHours          Float     @default(0)
+  regularPay            Float     @default(0)
+  overtimeHours         Float     @default(0)
+  overtimePay           Float     @default(0)
+  nightDifferentialHours Float    @default(0)
+  nightDifferentialPay  Float     @default(0)
+  holidayHours          Float     @default(0)
+  holidayPay            Float     @default(0)
+  allowanceAmount       Float     @default(0)
+  bonusAmount           Float     @default(0)
+  grossPay              Float     @default(0)
+  
+  // Deductions
+  totalDeductions       Float     @default(0)
+  totalContributions    Float     @default(0)
+  taxWithheld           Float     @default(0)
+  
+  // Net Pay
+  netPay                Float     @default(0)
+  
+  status                PayrollStatus @default(PENDING)
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  employee              Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollRun            PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  deductions            PayrollDeduction[]
+  contributions         PayrollContribution[]
+
+  @@map("payroll_records")
+}
+
+enum PayrollStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+// Payroll Runs
+model PayrollRun {
+  id            String    @id @default(cuid())
+  name          String
+  periodStart   DateTime  @db.Date
+  periodEnd     DateTime  @db.Date
+  runDate       DateTime  @default(now())
+  status        PayrollRunStatus @default(DRAFT)
+  approvedBy    String?
+  approvedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  records       PayrollRecord[]
+
+  @@map("payroll_runs")
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  PROCESSING
+  COMPLETED
+  APPROVED
+  CANCELLED
+}
+
+// Deductions
+model Deduction {
+  id            String    @id @default(cuid())
+  employeeId    String
+  name          String
+  type          DeductionType
+  amount        Float?
+  percentage    Float?
+  isRecurring   Boolean   @default(false)
+  startDate     DateTime
+  endDate       DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollDeductions PayrollDeduction[]
+
+  @@map("deductions")
+}
+
+enum DeductionType {
+  LOAN
+  ADVANCE
+  SSS
+  PHILHEALTH
+  PAG_IBIG
+  TAX
+  INSURANCE
+  OTHER
+}
+
+// Payroll Deductions (snapshot for each payroll)
+model PayrollDeduction {
+  id            String    @id @default(cuid())
+  payrollRecordId String
+  deductionId   String
+  amount        Float
+  createdAt     DateTime  @default(now())
+
+  payrollRecord PayrollRecord @relation(fields: [payrollRecordId], references: [id], onDelete: Cascade)
+  deduction     Deduction @relation(fields: [deductionId], references: [id], onDelete: Cascade)
+
+  @@map("payroll_deductions")
+}
+
+// Contributions
+model Contribution {
+  id            String    @id @default(cuid())
+  employeeId    String
+  type          ContributionType
+  employeeShare Float
+  employerShare Float
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollContributions PayrollContribution[]
+
+  @@map("contributions")
+}
+
+enum ContributionType {
+  SSS
+  PHILHEALTH
+  PAG_IBIG
+}
+
+// Payroll Contributions (snapshot for each payroll)
+model PayrollContribution {
+  id            String    @id @default(cuid())
+  payrollRecordId String
+  contributionId String
+  employeeShare Float
+  employerShare Float
+  createdAt     DateTime  @default(now())
+
+  payrollRecord PayrollRecord @relation(fields: [payrollRecordId], references: [id], onDelete: Cascade)
+  contribution  Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  @@map("payroll_contributions")
+}
+
+// Loans
+model Loan {
+  id            String    @id @default(cuid())
+  employeeId    String
+  loanType      LoanType
+  amount        Float
+  interestRate  Float     @default(0)
+  termMonths    Int
+  monthlyPayment Float
+  balance       Float
+  startDate     DateTime
+  endDate       DateTime?
+  status        LoanStatus @default(ACTIVE)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payments      LoanPayment[]
+
+  @@map("loans")
+}
+
+enum LoanType {
+  PERSONAL
+  EMERGENCY
+  SALARY_ADVANCE
+  COMPANY
+}
+
+enum LoanStatus {
+  ACTIVE
+  PAID
+  CANCELLED
+  DEFAULTED
+}
+
+// Loan Payments
+model LoanPayment {
+  id            String    @id @default(cuid())
+  loanId        String
+  amount        Float
+  paymentDate   DateTime  @default(now())
+  payrollRecordId String? // Link to payroll if paid via payroll
+  notes         String?
+  createdAt     DateTime  @default(now())
+
+  loan          Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@map("loan_payments")
+}
+
+// Leave Requests
+model LeaveRequest {
+  id            String    @id @default(cuid())
+  employeeId    String
+  leaveType     LeaveType
+  startDate     DateTime  @db.Date
+  endDate       DateTime  @db.Date
+  days          Float
+  reason        String?
+  status        LeaveStatus @default(PENDING)
+  approvedBy    String?
+  approvedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("leave_requests")
+}
+
+enum LeaveType {
+  VACATION
+  SICK
+  EMERGENCY
+  MATERNITY
+  PATERNITY
+  BEREAVEMENT
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// Holidays
+model Holiday {
+  id            String    @id @default(cuid())
+  name          String
+  date          DateTime  @db.Date
+  type          HolidayType
+  isRecurring   Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([date])
+  @@map("holidays")
+}
+
+enum HolidayType {
+  REGULAR
+  SPECIAL_NON_WORKING
+}
+
+// Audit Logs
+model AuditLog {
+  id            String    @id @default(cuid())
+  userId        String
+  action        String
+  entityType    String
+  entityId      String?
+  changes       String?   @db.Text // JSON string of changes
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
+
